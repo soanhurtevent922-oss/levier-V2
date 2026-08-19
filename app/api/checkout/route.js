@@ -31,12 +31,6 @@ function getAuthClient() {
 
 export async function POST(request) {
   try {
-    /*
-     * ----------------------------
-     * Vérification de connexion
-     * ----------------------------
-     */
-
     const authHeader =
       request.headers.get('authorization') || '';
 
@@ -49,7 +43,7 @@ export async function POST(request) {
       return NextResponse.json(
         {
           error:
-            'Tu dois être connecté pour payer.',
+            'Tu dois être connecté.',
         },
         {
           status: 401,
@@ -81,33 +75,8 @@ export async function POST(request) {
     }
 
     /*
-     * ----------------------------
-     * Vérification de la formule
-     * ----------------------------
-     */
-
-    const { plan } =
-      await request.json();
-
-    const selectedPlan =
-      PLANS[plan];
-
-    if (!selectedPlan) {
-      return NextResponse.json(
-        {
-          error:
-            'Formule inconnue.',
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    /*
-     * ----------------------------
-     * Vérification Supabase
-     * ----------------------------
+     * Le serveur vérifie d'abord
+     * si le compte a déjà payé.
      */
 
     const admin =
@@ -136,7 +105,7 @@ export async function POST(request) {
       return NextResponse.json(
         {
           error:
-            'Impossible de vérifier ton abonnement.',
+            'Impossible de vérifier ton accès.',
         },
         {
           status: 500,
@@ -144,24 +113,40 @@ export async function POST(request) {
       );
     }
 
-    /*
-     * ----------------------------
-     * VERROU ANTI DOUBLE PAIEMENT
-     * ----------------------------
-     */
-
-    const alreadyPaid =
+    const hasPaidAccess =
       profile?.payment_status ===
         'monthly' ||
       profile?.payment_status ===
         'lifetime';
 
-    if (alreadyPaid) {
+    /*
+     * COMPTE DÉJÀ PAYÉ :
+     * aucune session Stripe créée.
+     */
+
+    if (hasPaidAccess) {
+      return NextResponse.json({
+        alreadyPaid: true,
+        paymentStatus:
+          profile.payment_status,
+      });
+    }
+
+    /*
+     * Un abonnement past_due existe
+     * déjà : on évite d'en créer
+     * un deuxième.
+     */
+
+    if (
+      profile?.payment_status ===
+      'past_due'
+    ) {
       return NextResponse.json(
         {
+          billingIssue: true,
           error:
-            'Ton compte possède déjà un accès actif à Levier.',
-          alreadyPaid: true,
+            'Ton abonnement existe déjà mais le paiement doit être régularisé.',
         },
         {
           status: 409,
@@ -170,10 +155,41 @@ export async function POST(request) {
     }
 
     /*
-     * ----------------------------
-     * Configuration Stripe
-     * ----------------------------
+     * Maintenant seulement,
+     * on regarde la formule demandée.
      */
+
+    const bodyJson =
+      await request.json();
+
+    const plan =
+      bodyJson?.plan || null;
+
+    /*
+     * Connexion directe d'un compte
+     * non payé, sans formule choisie.
+     */
+
+    if (!plan) {
+      return NextResponse.json({
+        needsPlan: true,
+      });
+    }
+
+    const selectedPlan =
+      PLANS[plan];
+
+    if (!selectedPlan) {
+      return NextResponse.json(
+        {
+          error:
+            'Formule inconnue.',
+        },
+        {
+          status: 400,
+        }
+      );
+    }
 
     const stripeSecretKey =
       process.env.STRIPE_SECRET_KEY;
@@ -208,112 +224,88 @@ export async function POST(request) {
       );
     }
 
-    /*
-     * ----------------------------
-     * Création Checkout
-     * ----------------------------
-     */
-
-    const body =
+    const stripeBody =
       new URLSearchParams();
 
-    body.set(
+    stripeBody.set(
       'mode',
       selectedPlan.mode
     );
 
-    body.set(
+    stripeBody.set(
       'line_items[0][price]',
       priceId
     );
 
-    body.set(
+    stripeBody.set(
       'line_items[0][quantity]',
       '1'
     );
 
-    body.set(
+    stripeBody.set(
       'success_url',
       `${siteUrl}/dashboard?payment=success&session_id={CHECKOUT_SESSION_ID}`
     );
 
-    body.set(
+    stripeBody.set(
       'cancel_url',
       `${siteUrl}/#pricing`
     );
 
-    body.set(
+    stripeBody.set(
       'client_reference_id',
       user.id
     );
 
-    body.set(
+    stripeBody.set(
       'metadata[user_id]',
       user.id
     );
 
-    body.set(
+    stripeBody.set(
       'metadata[plan]',
       plan
     );
 
-    /*
-     * Si ce compte possède déjà
-     * un client Stripe, on le réutilise.
-     */
     if (
       profile?.stripe_customer_id
     ) {
-      body.set(
+      stripeBody.set(
         'customer',
         profile.stripe_customer_id
       );
     } else if (user.email) {
-      body.set(
+      stripeBody.set(
         'customer_email',
         user.email
       );
     }
 
-    /*
-     * Paiement unique :
-     * Stripe doit créer un client
-     * seulement s'il n'existe pas encore.
-     */
     if (
       selectedPlan.mode ===
         'payment' &&
       !profile?.stripe_customer_id
     ) {
-      body.set(
+      stripeBody.set(
         'customer_creation',
         'always'
       );
     }
 
-    /*
-     * Métadonnées abonnement mensuel
-     */
     if (
       selectedPlan.mode ===
       'subscription'
     ) {
-      body.set(
+      stripeBody.set(
         'subscription_data[metadata][user_id]',
         user.id
       );
 
-      body.set(
+      stripeBody.set(
         'subscription_data[metadata][plan]',
         plan
       );
     }
-
-    /*
-     * ----------------------------
-     * Appel Stripe
-     * ----------------------------
-     */
 
     const stripeResponse =
       await fetch(
@@ -330,7 +322,7 @@ export async function POST(request) {
           },
 
           body:
-            body.toString(),
+            stripeBody.toString(),
 
           cache: 'no-store',
         }
@@ -361,12 +353,6 @@ export async function POST(request) {
       );
     }
 
-    /*
-     * ----------------------------
-     * Redirection Stripe
-     * ----------------------------
-     */
-
     return NextResponse.json({
       url: session.url,
     });
@@ -379,7 +365,7 @@ export async function POST(request) {
     return NextResponse.json(
       {
         error:
-          'Impossible de démarrer le paiement.',
+          'Impossible de vérifier ton accès.',
       },
       {
         status: 500,
