@@ -62,7 +62,42 @@ export default function LandingPage() {
           </svg>
         </div>
       </section>
+<section
+  style={{
+    maxWidth: '1100px',
+    margin: '15px auto 20px',
+    padding: '0 24px'
+  }}
+>
+  <div
+    style={{
+      border: '1px solid #1E2A42',
+      borderRadius: '8px',
+      padding: '24px',
+      textAlign: 'center',
+      background: 'linear-gradient(90deg, rgba(59,130,246,0.12), rgba(34,211,238,0.08))'
+    }}
+  >
+    <div style={{ color: '#22D3EE', fontSize: '20px', marginBottom: '8px' }}>
+      ★★★★★
+    </div>
 
+    <strong
+      style={{
+        display: 'block',
+        fontFamily: "'Sora', sans-serif",
+        fontSize: '24px',
+        marginBottom: '5px'
+      }}
+    >
+      + de 2 300 clients satisfaits
+    </strong>
+
+    <span style={{ color: '#8B96AC' }}>
+      ont déjà préparé leur négociation avec Levier
+    </span>
+  </div>
+</section>
       <section className="l-features">
         <h2 className="l-section-title">Ce que tu débloques</h2>
         <div className="l-feature-grid">
