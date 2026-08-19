@@ -31,7 +31,7 @@ Version actuelle : **sans Stripe**, pour un premier déploiement simple et propr
    - **Vue d'ensemble** — résumé rapide (fourchette, dernier salaire, dépenses, reste à vivre)
    - **Finances** — renseigne tes dépenses fixes (loyer, transport...) et ton historique de salaire
    - **Script** — ta fourchette de référence + génère ton script de négociation
-   - **Entraînement** — pratique face à un recruteur IA (nécessite l'étape optionnelle 6 ci-dessous)
+   - **Entraînement** — pratique face à des mises en situation classiques (augmentation et entretien d'embauche)
 
 ## Important à savoir
 
@@ -47,14 +47,6 @@ Les fourchettes de salaire affichées sont des **repères indicatifs**, pas des 
 4. Invente un mot de passe long pour `CRON_SECRET`.
 5. Ajoute `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `REMINDER_FROM_EMAIL`, `CRON_SECRET` et `NEXT_PUBLIC_SITE_URL` dans Vercel, redéploie.
 6. Le fichier `vercel.json` déclenche automatiquement la vérification chaque jour à 8h.
-
-### 6. Active l'entraînement avec l'IA recruteur
-
-1. Crée un compte sur https://console.anthropic.com (facturation à l'usage, pas d'abonnement fixe).
-2. Génère une clé API (Settings → API Keys) → `ANTHROPIC_API_KEY`.
-3. Ajoute-la dans Vercel, redéploie.
-
-**Point financier à connaître** : contrairement à Supabase/Vercel/Resend (paliers gratuits confortables), chaque message échangé dans le mode entraînement a un **coût réel à l'usage**, facturé par Anthropic — à surveiller sur ton dashboard Anthropic une fois que tu as de vrais utilisateurs.
 
 ## Prochaines étapes (pas encore codées)
 
