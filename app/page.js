@@ -44,7 +44,7 @@ export default function LandingPage() {
 
       <header className="l-header">
         <Link href="/" className="l-logo">LEVIER</Link>
-        <Link href="/login" className="l-login">Se connecter <span>→</span></Link>
+       
       </header>
 
       <section className="l-hero">
@@ -65,10 +65,10 @@ export default function LandingPage() {
           </p>
 
           <div className="l-actions">
-            <Link href="/login" className="l-cta">
+            <a href="#pricing" className="l-cta">
               Préparer ma négociation
               <span className="l-cta-icon">→</span>
-            </Link>
+            </a>
             <a href="#features" className="l-secondary">Découvrir Levier</a>
           </div>
 
@@ -161,13 +161,13 @@ export default function LandingPage() {
         <span>Levier — le bon argument, au bon moment.</span>
       </section>
 
-      <section className="l-pricing">
+     <section className="l-pricing" id="pricing">
         <div className="l-section-head l-section-head--pricing">
           <div>
             <span className="l-section-kicker">Accès</span>
             <h2>Choisis ton rythme.</h2>
           </div>
-          <p>Accès gratuit pendant la phase de test. Le paiement sera activé plus tard.</p>
+          <p>Choisis la formule qui te convient et crée ton compte pour accéder à Levier.</p>
         </div>
 
         <div className="l-pricing-grid">
