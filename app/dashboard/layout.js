@@ -19,6 +19,7 @@ export default function DashboardLayout({ children }) {
   const [profile, setProfile] = useState(null);
   const [history, setHistory] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [opportunities, setOpportunities] = useState([]);
   const [showEditProfile, setShowEditProfile] = useState(false);
 
   useEffect(() => {
@@ -30,7 +31,6 @@ export default function DashboardLayout({ children }) {
       let { data: prof } = await supabase
         .from('profiles').select('*').eq('user_id', session.user.id).maybeSingle();
 
-      // Pas encore de profil pour ce compte : on en crée un vide, rempli juste après.
       if (!prof) {
         const { data: newProf } = await supabase.from('profiles')
           .insert({ user_id: session.user.id })
@@ -41,25 +41,60 @@ export default function DashboardLayout({ children }) {
       setProfile(prof);
 
       if (prof) {
-        await loadHistoryAndExpenses(session.user.id);
+        await loadDashboardData(session.user.id);
       }
       setLoading(false);
     }
+
     init();
   }, [router]);
 
-  async function loadHistoryAndExpenses(uid) {
+  async function loadDashboardData(uid) {
     const { data: hist } = await supabase
-      .from('salary_history').select('*').eq('user_id', uid).order('entry_date', { ascending: false });
+      .from('salary_history')
+      .select('*')
+      .eq('user_id', uid)
+      .order('entry_date', { ascending: false });
+
     setHistory(hist || []);
+
     const { data: exp } = await supabase
-      .from('expense_categories').select('*').eq('user_id', uid).order('created_at', { ascending: true });
+      .from('expense_categories')
+      .select('*')
+      .eq('user_id', uid)
+      .order('created_at', { ascending: true });
+
     setExpenses(exp || []);
+
+    const { data: opps } = await supabase
+      .from('opportunities')
+      .select('*')
+      .eq('user_id', uid)
+      .order('updated_at', { ascending: false });
+
+    setOpportunities(opps || []);
   }
 
   async function refreshProfile() {
-    const { data: prof } = await supabase.from('profiles').select('*').eq('user_id', userId).maybeSingle();
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
     setProfile(prof);
+  }
+
+  async function refreshOpportunities() {
+    if (!userId) return;
+
+    const { data: opps } = await supabase
+      .from('opportunities')
+      .select('*')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false });
+
+    setOpportunities(opps || []);
   }
 
   async function handleSignOut() {
@@ -69,23 +104,41 @@ export default function DashboardLayout({ children }) {
 
   async function handleSaveProfile(e) {
     e.preventDefault();
+
     const job_category = e.target.jobCategory.value;
     const target_job_category = e.target.targetJobCategory.value || null;
     const experience_level = e.target.experienceLevel.value;
     const city_tier = e.target.cityTier.value;
     const next_review_date = e.target.nextReviewDate.value || null;
 
-    const { data } = await supabase.from('profiles')
-      .update({ job_category, target_job_category, experience_level, city_tier, next_review_date }).eq('id', profile.id).select().single();
+    const { data } = await supabase
+      .from('profiles')
+      .update({
+        job_category,
+        target_job_category,
+        experience_level,
+        city_tier,
+        next_review_date,
+      })
+      .eq('id', profile.id)
+      .select()
+      .single();
+
     setProfile(data);
+
     if (history.length === 0 && expenses.length === 0) {
-      await loadHistoryAndExpenses(userId);
+      await loadDashboardData(userId);
     }
+
     setShowEditProfile(false);
   }
 
   if (loading) {
-    return <div className="wrap"><p className="sr-loading">Chargement…</p></div>;
+    return (
+      <div className="wrap">
+        <p className="sr-loading">Chargement…</p>
+      </div>
+    );
   }
 
   if (!profile.job_category || showEditProfile) {
@@ -93,38 +146,90 @@ export default function DashboardLayout({ children }) {
       <div className="wrap">
         <div className="setup-wrap">
           <h2>Configure ton profil</h2>
-          <p className="sub">Ça nous permet de te donner une fourchette de salaire pertinente.</p>
+          <p className="sub">
+            Ça nous permet de te donner une fourchette de salaire pertinente.
+          </p>
+
           <form onSubmit={handleSaveProfile}>
             <div>
               <label htmlFor="jobCategory">Métier</label>
-              <select id="jobCategory" name="jobCategory" defaultValue={profile?.job_category || JOB_CATEGORIES[0]}>
-                {JOB_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+              <select
+                id="jobCategory"
+                name="jobCategory"
+                defaultValue={profile?.job_category || JOB_CATEGORIES[0]}
+              >
+                {JOB_CATEGORIES.map((c) => (
+                  <option key={c}>{c}</option>
+                ))}
               </select>
             </div>
+
             <div>
-              <label htmlFor="targetJobCategory">Métier visé pour ton prochain poste (optionnel)</label>
-              <select id="targetJobCategory" name="targetJobCategory" defaultValue={profile?.target_job_category || ''}>
+              <label htmlFor="targetJobCategory">
+                Métier visé pour ton prochain poste (optionnel)
+              </label>
+
+              <select
+                id="targetJobCategory"
+                name="targetJobCategory"
+                defaultValue={profile?.target_job_category || ''}
+              >
                 <option value="">Même que mon métier actuel</option>
-                {JOB_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+
+                {JOB_CATEGORIES.map((c) => (
+                  <option key={c}>{c}</option>
+                ))}
               </select>
             </div>
+
             <div>
               <label htmlFor="experienceLevel">Expérience</label>
-              <select id="experienceLevel" name="experienceLevel" defaultValue={profile?.experience_level || 'junior'}>
-                {EXPERIENCE_LEVELS.map((l) => <option key={l.key} value={l.key}>{l.label}</option>)}
+
+              <select
+                id="experienceLevel"
+                name="experienceLevel"
+                defaultValue={profile?.experience_level || 'junior'}
+              >
+                {EXPERIENCE_LEVELS.map((l) => (
+                  <option key={l.key} value={l.key}>
+                    {l.label}
+                  </option>
+                ))}
               </select>
             </div>
+
             <div>
               <label htmlFor="cityTier">Zone géographique</label>
-              <select id="cityTier" name="cityTier" defaultValue={profile?.city_tier || 'paris'}>
-                {CITY_TIERS.map((z) => <option key={z.key} value={z.key}>{z.label}</option>)}
+
+              <select
+                id="cityTier"
+                name="cityTier"
+                defaultValue={profile?.city_tier || 'paris'}
+              >
+                {CITY_TIERS.map((z) => (
+                  <option key={z.key} value={z.key}>
+                    {z.label}
+                  </option>
+                ))}
               </select>
             </div>
+
             <div>
-              <label htmlFor="nextReviewDate">Date de ton prochain entretien/évaluation (optionnel)</label>
-              <input id="nextReviewDate" name="nextReviewDate" type="date" defaultValue={profile?.next_review_date || ''} />
+              <label htmlFor="nextReviewDate">
+                Date de ton prochain entretien/évaluation (optionnel)
+              </label>
+
+              <input
+                id="nextReviewDate"
+                name="nextReviewDate"
+                type="date"
+                defaultValue={profile?.next_review_date || ''}
+              />
             </div>
-            <button type="submit" className="btn-primary">Enregistrer</button>
+
+            <button type="submit" className="btn-primary">
+              Enregistrer
+            </button>
           </form>
         </div>
       </div>
@@ -136,28 +241,66 @@ export default function DashboardLayout({ children }) {
     { href: '/dashboard/finances', label: 'Finances' },
     { href: '/dashboard/script', label: 'Script' },
     { href: '/dashboard/entrainement', label: 'Entraînement' },
+    { href: '/dashboard/opportunites', label: 'Opportunités' },
   ];
 
   return (
-    <DashboardContext.Provider value={{ profile, userId, history, setHistory, expenses, setExpenses, refreshProfile, setShowEditProfile }}>
+    <DashboardContext.Provider
+      value={{
+        profile,
+        userId,
+        history,
+        setHistory,
+        expenses,
+        setExpenses,
+        opportunities,
+        setOpportunities,
+        refreshOpportunities,
+        refreshProfile,
+        setShowEditProfile,
+      }}
+    >
       <div className="wrap">
         <header className="top">
           <div className="brand">
             <h1>Levier</h1>
             <p>Le bon argument, au bon moment.</p>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              flexWrap: 'wrap',
+            }}
+          >
             <div className="user-tag">
               {profile.job_category}
-              <button className="edit-link" onClick={() => setShowEditProfile(true)}>modifier</button>
+
+              <button
+                className="edit-link"
+                onClick={() => setShowEditProfile(true)}
+              >
+                modifier
+              </button>
             </div>
-            <button className="btn-ghost" onClick={handleSignOut}>Déconnexion</button>
+
+            <button className="btn-ghost" onClick={handleSignOut}>
+              Déconnexion
+            </button>
           </div>
         </header>
 
         <nav className="dash-nav">
           {navItems.map((item) => (
-            <Link key={item.href} href={item.href} className={`dash-nav-link ${pathname === item.href ? 'active' : ''}`}>
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`dash-nav-link ${
+                pathname === item.href ? 'active' : ''
+              }`}
+            >
               {item.label}
             </Link>
           ))}
