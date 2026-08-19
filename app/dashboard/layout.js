@@ -1,10 +1,22 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+} from 'react';
+import {
+  useRouter,
+  usePathname,
+} from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '../../lib/supabaseClient';
-import { JOB_CATEGORIES, EXPERIENCE_LEVELS, CITY_TIERS } from '../../lib/benchmarks';
+import {
+  JOB_CATEGORIES,
+  EXPERIENCE_LEVELS,
+  CITY_TIERS,
+} from '../../lib/benchmarks';
 
 const DashboardContext = createContext(null);
 
@@ -12,18 +24,39 @@ export function useDashboard() {
   return useContext(DashboardContext);
 }
 
-export default function DashboardLayout({ children }) {
+export default function DashboardLayout({
+  children,
+}) {
   const router = useRouter();
   const pathname = usePathname();
 
-  const [loading, setLoading] = useState(true);
-  const [fatalError, setFatalError] = useState('');
-  const [userId, setUserId] = useState(null);
-  const [profile, setProfile] = useState(null);
-  const [history, setHistory] = useState([]);
-  const [expenses, setExpenses] = useState([]);
-  const [opportunities, setOpportunities] = useState([]);
-  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [loading, setLoading] =
+    useState(true);
+
+  const [fatalError, setFatalError] =
+    useState('');
+
+  const [userId, setUserId] =
+    useState(null);
+
+  const [profile, setProfile] =
+    useState(null);
+
+  const [history, setHistory] =
+    useState([]);
+
+  const [expenses, setExpenses] =
+    useState([]);
+
+  const [
+    opportunities,
+    setOpportunities,
+  ] = useState([]);
+
+  const [
+    showEditProfile,
+    setShowEditProfile,
+  ] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -35,44 +68,67 @@ export default function DashboardLayout({ children }) {
         const {
           data: { session },
           error: sessionError,
-        } = await supabase.auth.getSession();
+        } =
+          await supabase.auth.getSession();
 
-        if (sessionError) throw sessionError;
+        if (sessionError) {
+          throw sessionError;
+        }
 
         if (!session) {
           router.push('/login');
           return;
         }
 
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
 
         const uid = session.user.id;
+
         setUserId(uid);
 
-        let { data: prof, error: profileError } = await supabase
+        let {
+          data: prof,
+          error: profileError,
+        } = await supabase
           .from('profiles')
           .select('*')
           .eq('user_id', uid)
           .maybeSingle();
 
-        if (profileError) throw profileError;
+        if (profileError) {
+          throw profileError;
+        }
 
         if (!prof) {
-          const { error: insertError } = await supabase
+          const {
+            error: insertError,
+          } = await supabase
             .from('profiles')
-            .insert({ user_id: uid });
+            .insert({
+              user_id: uid,
+            });
 
-          if (insertError && insertError.code !== '23505') {
+          if (
+            insertError &&
+            insertError.code !== '23505'
+          ) {
             throw insertError;
           }
 
-          const { data: createdProf, error: refetchError } = await supabase
+          const {
+            data: createdProf,
+            error: refetchError,
+          } = await supabase
             .from('profiles')
             .select('*')
             .eq('user_id', uid)
             .maybeSingle();
 
-          if (refetchError) throw refetchError;
+          if (refetchError) {
+            throw refetchError;
+          }
 
           prof = createdProf;
         }
@@ -83,12 +139,126 @@ export default function DashboardLayout({ children }) {
           );
         }
 
-        if (cancelled) return;
+        /*
+         * -------------------------
+         * VERROU DE PAIEMENT
+         * -------------------------
+         */
+
+        const paidStatuses = [
+          'monthly',
+          'lifetime',
+        ];
+
+        let hasPaidAccess =
+          paidStatuses.includes(
+            prof.payment_status
+          );
+
+        const paymentJustCompleted =
+          new URLSearchParams(
+            window.location.search
+          ).get('payment') === 'success';
+
+        /*
+         * Après Stripe, le webhook peut mettre
+         * quelques secondes avant de mettre
+         * payment_status à jour.
+         *
+         * On attend donc un peu avant de refuser
+         * l'accès.
+         */
+        if (
+          !hasPaidAccess &&
+          paymentJustCompleted
+        ) {
+          for (
+            let attempt = 0;
+            attempt < 8;
+            attempt++
+          ) {
+            await new Promise(
+              (resolve) =>
+                setTimeout(resolve, 750)
+            );
+
+            const {
+              data: refreshedProf,
+              error: refreshError,
+            } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('user_id', uid)
+              .maybeSingle();
+
+            if (refreshError) {
+              throw refreshError;
+            }
+
+            if (refreshedProf) {
+              prof = refreshedProf;
+            }
+
+            hasPaidAccess =
+              paidStatuses.includes(
+                prof?.payment_status
+              );
+
+            if (hasPaidAccess) {
+              break;
+            }
+          }
+        }
+
+        /*
+         * Compte connecté mais non payé :
+         * impossible d'ouvrir le dashboard.
+         */
+        if (!hasPaidAccess) {
+          window.localStorage.removeItem(
+            'levier_pending_plan'
+          );
+
+          window.location.replace(
+            '/#pricing'
+          );
+
+          return;
+        }
+
+        /*
+         * Le client a bien payé.
+         */
+        window.localStorage.removeItem(
+          'levier_pending_plan'
+        );
+
+        if (paymentJustCompleted) {
+          window.history.replaceState(
+            {},
+            '',
+            '/dashboard'
+          );
+        }
+
+        /*
+         * -------------------------
+         * FIN DU VERROU
+         * -------------------------
+         */
+
+        if (cancelled) {
+          return;
+        }
 
         setProfile(prof);
+
         await loadDashboardData(uid);
       } catch (error) {
-        console.error('Dashboard init error:', error);
+        console.error(
+          'Dashboard init error:',
+          error
+        );
 
         if (!cancelled) {
           setFatalError(
@@ -97,7 +267,9 @@ export default function DashboardLayout({ children }) {
           );
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
@@ -109,57 +281,77 @@ export default function DashboardLayout({ children }) {
   }, [router]);
 
   async function loadDashboardData(uid) {
-    const { data: hist } = await supabase
-      .from('salary_history')
-      .select('*')
-      .eq('user_id', uid)
-      .order('entry_date', { ascending: false });
+    const { data: hist } =
+      await supabase
+        .from('salary_history')
+        .select('*')
+        .eq('user_id', uid)
+        .order('entry_date', {
+          ascending: false,
+        });
 
     setHistory(hist || []);
 
-    const { data: exp } = await supabase
-      .from('expense_categories')
-      .select('*')
-      .eq('user_id', uid)
-      .order('created_at', { ascending: true });
+    const { data: exp } =
+      await supabase
+        .from('expense_categories')
+        .select('*')
+        .eq('user_id', uid)
+        .order('created_at', {
+          ascending: true,
+        });
 
     setExpenses(exp || []);
 
-    const { data: opps } = await supabase
-      .from('opportunities')
-      .select('*')
-      .eq('user_id', uid)
-      .order('updated_at', { ascending: false });
+    const { data: opps } =
+      await supabase
+        .from('opportunities')
+        .select('*')
+        .eq('user_id', uid)
+        .order('updated_at', {
+          ascending: false,
+        });
 
     setOpportunities(opps || []);
   }
 
   async function refreshProfile() {
-    if (!userId) return;
+    if (!userId) {
+      return;
+    }
 
-    const { data: prof } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data: prof } =
+      await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
 
-    if (prof) setProfile(prof);
+    if (prof) {
+      setProfile(prof);
+    }
   }
 
   async function refreshOpportunities() {
-    if (!userId) return;
+    if (!userId) {
+      return;
+    }
 
-    const { data: opps } = await supabase
-      .from('opportunities')
-      .select('*')
-      .eq('user_id', userId)
-      .order('updated_at', { ascending: false });
+    const { data: opps } =
+      await supabase
+        .from('opportunities')
+        .select('*')
+        .eq('user_id', userId)
+        .order('updated_at', {
+          ascending: false,
+        });
 
     setOpportunities(opps || []);
   }
 
   async function handleSignOut() {
     await supabase.auth.signOut();
+
     router.push('/login');
   }
 
@@ -170,18 +362,31 @@ export default function DashboardLayout({ children }) {
       setFatalError(
         "Ton profil n'est pas encore prêt. Recharge la page et réessaie."
       );
+
       return;
     }
 
-    const job_category = e.target.jobCategory.value;
-    const target_job_category =
-      e.target.targetJobCategory.value || null;
-    const experience_level = e.target.experienceLevel.value;
-    const city_tier = e.target.cityTier.value;
-    const next_review_date =
-      e.target.nextReviewDate.value || null;
+    const job_category =
+      e.target.jobCategory.value;
 
-    const { data, error } = await supabase
+    const target_job_category =
+      e.target.targetJobCategory.value ||
+      null;
+
+    const experience_level =
+      e.target.experienceLevel.value;
+
+    const city_tier =
+      e.target.cityTier.value;
+
+    const next_review_date =
+      e.target.nextReviewDate.value ||
+      null;
+
+    const {
+      data,
+      error,
+    } = await supabase
       .from('profiles')
       .update({
         job_category,
@@ -201,8 +406,13 @@ export default function DashboardLayout({ children }) {
 
     setProfile(data);
 
-    if (history.length === 0 && expenses.length === 0) {
-      await loadDashboardData(userId);
+    if (
+      history.length === 0 &&
+      expenses.length === 0
+    ) {
+      await loadDashboardData(
+        userId
+      );
     }
 
     setShowEditProfile(false);
@@ -211,7 +421,9 @@ export default function DashboardLayout({ children }) {
   if (loading) {
     return (
       <div className="wrap">
-        <p className="sr-loading">Chargement…</p>
+        <p className="sr-loading">
+          Chargement…
+        </p>
       </div>
     );
   }
@@ -220,8 +432,13 @@ export default function DashboardLayout({ children }) {
     return (
       <div className="wrap">
         <div className="setup-wrap">
-          <h2>Impossible de charger ton espace</h2>
-          <p className="sub">{fatalError}</p>
+          <h2>
+            Impossible de charger ton espace
+          </h2>
+
+          <p className="sub">
+            {fatalError}
+          </p>
 
           <div
             style={{
@@ -232,14 +449,18 @@ export default function DashboardLayout({ children }) {
           >
             <button
               className="btn-primary"
-              onClick={() => window.location.reload()}
+              onClick={() =>
+                window.location.reload()
+              }
             >
               Réessayer
             </button>
 
             <button
               className="btn-ghost"
-              onClick={handleSignOut}
+              onClick={
+                handleSignOut
+              }
             >
               Se déconnecter
             </button>
@@ -249,57 +470,90 @@ export default function DashboardLayout({ children }) {
     );
   }
 
-  if (!profile || !profile.job_category || showEditProfile) {
+  if (
+    !profile ||
+    !profile.job_category ||
+    showEditProfile
+  ) {
     return (
       <div className="wrap">
         <div className="setup-wrap">
-          <h2>Configure ton profil</h2>
+          <h2>
+            Configure ton profil
+          </h2>
 
           <p className="sub">
-            Ça nous permet de te donner une fourchette de salaire pertinente.
+            Ça nous permet de te donner
+            une fourchette de salaire
+            pertinente.
           </p>
 
-          <form onSubmit={handleSaveProfile}>
+          <form
+            onSubmit={
+              handleSaveProfile
+            }
+          >
             <div>
-              <label htmlFor="jobCategory">Métier</label>
+              <label
+                htmlFor="jobCategory"
+              >
+                Métier
+              </label>
 
               <select
                 id="jobCategory"
                 name="jobCategory"
                 defaultValue={
-                  profile?.job_category || JOB_CATEGORIES[0]
+                  profile?.job_category ||
+                  JOB_CATEGORIES[0]
                 }
               >
-                {JOB_CATEGORIES.map((c) => (
-                  <option key={c}>{c}</option>
-                ))}
+                {JOB_CATEGORIES.map(
+                  (c) => (
+                    <option key={c}>
+                      {c}
+                    </option>
+                  )
+                )}
               </select>
             </div>
 
             <div>
-              <label htmlFor="targetJobCategory">
-                Métier visé pour ton prochain poste (optionnel)
+              <label
+                htmlFor="targetJobCategory"
+              >
+                Métier visé pour ton
+                prochain poste
+                (optionnel)
               </label>
 
               <select
                 id="targetJobCategory"
                 name="targetJobCategory"
                 defaultValue={
-                  profile?.target_job_category || ''
+                  profile?.target_job_category ||
+                  ''
                 }
               >
                 <option value="">
-                  Même que mon métier actuel
+                  Même que mon métier
+                  actuel
                 </option>
 
-                {JOB_CATEGORIES.map((c) => (
-                  <option key={c}>{c}</option>
-                ))}
+                {JOB_CATEGORIES.map(
+                  (c) => (
+                    <option key={c}>
+                      {c}
+                    </option>
+                  )
+                )}
               </select>
             </div>
 
             <div>
-              <label htmlFor="experienceLevel">
+              <label
+                htmlFor="experienceLevel"
+              >
                 Expérience
               </label>
 
@@ -307,19 +561,27 @@ export default function DashboardLayout({ children }) {
                 id="experienceLevel"
                 name="experienceLevel"
                 defaultValue={
-                  profile?.experience_level || 'junior'
+                  profile?.experience_level ||
+                  'junior'
                 }
               >
-                {EXPERIENCE_LEVELS.map((l) => (
-                  <option key={l.key} value={l.key}>
-                    {l.label}
-                  </option>
-                ))}
+                {EXPERIENCE_LEVELS.map(
+                  (l) => (
+                    <option
+                      key={l.key}
+                      value={l.key}
+                    >
+                      {l.label}
+                    </option>
+                  )
+                )}
               </select>
             </div>
 
             <div>
-              <label htmlFor="cityTier">
+              <label
+                htmlFor="cityTier"
+              >
                 Zone géographique
               </label>
 
@@ -327,20 +589,30 @@ export default function DashboardLayout({ children }) {
                 id="cityTier"
                 name="cityTier"
                 defaultValue={
-                  profile?.city_tier || 'paris'
+                  profile?.city_tier ||
+                  'paris'
                 }
               >
-                {CITY_TIERS.map((z) => (
-                  <option key={z.key} value={z.key}>
-                    {z.label}
-                  </option>
-                ))}
+                {CITY_TIERS.map(
+                  (z) => (
+                    <option
+                      key={z.key}
+                      value={z.key}
+                    >
+                      {z.label}
+                    </option>
+                  )
+                )}
               </select>
             </div>
 
             <div>
-              <label htmlFor="nextReviewDate">
-                Date de ton prochain entretien/évaluation (optionnel)
+              <label
+                htmlFor="nextReviewDate"
+              >
+                Date de ton prochain
+                entretien/évaluation
+                (optionnel)
               </label>
 
               <input
@@ -348,7 +620,8 @@ export default function DashboardLayout({ children }) {
                 name="nextReviewDate"
                 type="date"
                 defaultValue={
-                  profile?.next_review_date || ''
+                  profile?.next_review_date ||
+                  ''
                 }
               />
             </div>
@@ -371,19 +644,23 @@ export default function DashboardLayout({ children }) {
       label: "Vue d'ensemble",
     },
     {
-      href: '/dashboard/finances',
+      href:
+        '/dashboard/finances',
       label: 'Finances',
     },
     {
-      href: '/dashboard/script',
+      href:
+        '/dashboard/script',
       label: 'Script',
     },
     {
-      href: '/dashboard/entrainement',
+      href:
+        '/dashboard/entrainement',
       label: 'Entraînement',
     },
     {
-      href: '/dashboard/opportunites',
+      href:
+        '/dashboard/opportunites',
       label: 'Opportunités',
     },
   ];
@@ -408,7 +685,11 @@ export default function DashboardLayout({ children }) {
         <header className="top">
           <div className="brand">
             <h1>Levier</h1>
-            <p>Le bon argument, au bon moment.</p>
+
+            <p>
+              Le bon argument, au bon
+              moment.
+            </p>
           </div>
 
           <div
@@ -425,7 +706,9 @@ export default function DashboardLayout({ children }) {
               <button
                 className="edit-link"
                 onClick={() =>
-                  setShowEditProfile(true)
+                  setShowEditProfile(
+                    true
+                  )
                 }
               >
                 modifier
@@ -434,7 +717,9 @@ export default function DashboardLayout({ children }) {
 
             <button
               className="btn-ghost"
-              onClick={handleSignOut}
+              onClick={
+                handleSignOut
+              }
             >
               Déconnexion
             </button>
@@ -442,17 +727,22 @@ export default function DashboardLayout({ children }) {
         </header>
 
         <nav className="dash-nav">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`dash-nav-link ${
-                pathname === item.href ? 'active' : ''
-              }`}
-            >
-              {item.label}
-            </Link>
-          ))}
+          {navItems.map(
+            (item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`dash-nav-link ${
+                  pathname ===
+                  item.href
+                    ? 'active'
+                    : ''
+                }`}
+              >
+                {item.label}
+              </Link>
+            )
+          )}
         </nav>
 
         {children}
