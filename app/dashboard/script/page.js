@@ -1,23 +1,39 @@
 'use client';
 
-import { useState } from 'react';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { useDashboard } from '../layout';
 import { getBenchmark } from '../../../lib/benchmarks';
 
+const LEVER_STATUSES = new Set(['offre_recue', 'negociation']);
+
 export default function ScriptPage() {
-  const { profile, history } = useDashboard();
+  const { profile, history, opportunities } = useDashboard();
   const [mode, setMode] = useState('augmentation'); // 'augmentation' | 'entretien'
   const [script, setScript] = useState('');
+  const [selectedOfferId, setSelectedOfferId] = useState('');
 
   const currentSalary = history?.[0]?.amount || null;
   const [min, max] = getBenchmark(profile.job_category, profile.experience_level, profile.city_tier) || [null, null];
   const targetJob = profile.target_job_category || profile.job_category;
   const [targetMin, targetMax] = getBenchmark(targetJob, profile.experience_level, profile.city_tier) || [null, null];
 
+  const competingOffers = opportunities
+    .filter((o) => LEVER_STATUSES.has(o.status) && Number(o.salary_offered) > 0)
+    .sort((a, b) => Number(b.salary_offered) - Number(a.salary_offered));
+
+  useEffect(() => {
+    const requestedOpportunityId = new URLSearchParams(window.location.search).get('opportunity');
+    if (requestedOpportunityId && competingOffers.some((o) => o.id === requestedOpportunityId)) {
+      setSelectedOfferId(requestedOpportunityId);
+    }
+  }, [opportunities]);
+
   function generateScript(e) {
     e.preventDefault();
     const achievement = e.target.achievement.value.trim();
     const targetPct = parseFloat(e.target.targetPct?.value) || 0;
+    const competingOffer = competingOffers.find((o) => o.id === selectedOfferId) || null;
 
     if (mode === 'augmentation') {
       const base = currentSalary || max;
@@ -34,6 +50,9 @@ export default function ScriptPage() {
         min && max
           ? `D'après les données de marché pour un poste comparable au mien, la fourchette se situe plutôt entre ${min.toLocaleString('fr-FR')}€ et ${max.toLocaleString('fr-FR')}€ brut annuel.`
           : `D'après mes recherches sur le marché actuel, ma rémunération me semble en retrait par rapport à des postes comparables.`,
+        competingOffer
+          ? `J'ai également reçu une proposition externe de ${Number(competingOffer.salary_offered).toLocaleString('fr-FR')}€ brut annuel chez ${competingOffer.company_name}. Ma préférence est de poursuivre ici si nous pouvons rapprocher ma rémunération de ce niveau.`
+          : null,
         target
           ? currentSalary
             ? `Vu mes responsabilités et ce contexte, je vise une évolution vers ${target.toLocaleString('fr-FR')}€ brut annuel — soit environ ${targetPct}% d'augmentation par rapport à ma situation actuelle.`
@@ -52,6 +71,9 @@ export default function ScriptPage() {
         targetMin && targetMax
           ? `Concernant la rémunération, mes recherches sur le marché pour ce type de poste indiquent une fourchette entre ${targetMin.toLocaleString('fr-FR')}€ et ${targetMax.toLocaleString('fr-FR')}€ brut annuel.`
           : `Concernant la rémunération, je me suis renseigné(e) sur les standards du marché pour ce type de poste.`,
+        competingOffer
+          ? `Je suis également en discussion avancée avec ${competingOffer.company_name}, qui m'a proposé ${Number(competingOffer.salary_offered).toLocaleString('fr-FR')}€ brut annuel. Votre opportunité m'intéresse réellement, et cette proposition me donne simplement un point de comparaison concret pour discuter du package.`
+          : null,
         `Je viserais plutôt le haut de cette fourchette, vu mon expérience et ce que je peux apporter rapidement à l'équipe — mais je reste ouvert(e) à en discuter selon l'ensemble du package (avantages, évolution, télétravail).`,
         `Avez-vous des questions sur mon parcours, ou souhaitez-vous qu'on aborde un point en particulier ?`,
       ].filter(Boolean);
@@ -85,7 +107,7 @@ export default function ScriptPage() {
 
       <h2 className="section-title">Prépare ta discussion</h2>
       <div className="panel">
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
           <button
             type="button"
             className={mode === 'augmentation' ? 'btn-primary' : 'btn-ghost'}
@@ -111,6 +133,28 @@ export default function ScriptPage() {
             </label>
             <textarea id="achievement" name="achievement" rows={2} placeholder="Ex. j'ai piloté le lancement de X, augmenté Y de 20%..." />
           </div>
+
+          {competingOffers.length > 0 ? (
+            <div>
+              <label htmlFor="competingOfferId">Offre concurrente à utiliser comme levier (optionnel)</label>
+              <select id="competingOfferId" name="competingOfferId" value={selectedOfferId} onChange={(e) => setSelectedOfferId(e.target.value)}>
+                <option value="">Ne pas mentionner d&apos;autre offre</option>
+                {competingOffers.map((offer) => (
+                  <option key={offer.id} value={offer.id}>
+                    {offer.company_name} — {Number(offer.salary_offered).toLocaleString('fr-FR')}€ brut/an
+                  </option>
+                ))}
+              </select>
+              <p className="benchmark-note" style={{ margin: '6px 0 0' }}>
+                À utiliser uniquement si l&apos;offre est réelle. Le script l&apos;intégrera comme point de comparaison, pas comme une menace.
+              </p>
+            </div>
+          ) : (
+            <p className="benchmark-note" style={{ margin: 0 }}>
+              Tu as une autre offre ? Ajoute-la dans <Link href="/dashboard/opportunites" style={{ color: 'var(--cyan)' }}>Mes opportunités</Link> pour l&apos;utiliser automatiquement comme levier.
+            </p>
+          )}
+
           {mode === 'augmentation' && (
             <div>
               <label htmlFor="targetPct">Augmentation visée (%)</label>
