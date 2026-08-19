@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 
 export const runtime = 'nodejs';
 
@@ -8,6 +9,7 @@ const PLANS = {
     mode: 'subscription',
     priceEnv: 'STRIPE_PRICE_MONTHLY',
   },
+
   lifetime: {
     mode: 'payment',
     priceEnv: 'STRIPE_PRICE_LIFETIME',
@@ -29,64 +31,196 @@ function getAuthClient() {
 
 export async function POST(request) {
   try {
-    const authHeader = request.headers.get('authorization') || '';
+    /*
+     * ----------------------------
+     * Vérification de connexion
+     * ----------------------------
+     */
 
-    const accessToken = authHeader.startsWith('Bearer ')
-      ? authHeader.slice(7)
-      : null;
+    const authHeader =
+      request.headers.get('authorization') || '';
+
+    const accessToken =
+      authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7)
+        : null;
 
     if (!accessToken) {
       return NextResponse.json(
-        { error: 'Tu dois être connecté pour payer.' },
-        { status: 401 }
+        {
+          error:
+            'Tu dois être connecté pour payer.',
+        },
+        {
+          status: 401,
+        }
       );
     }
 
-    const supabase = getAuthClient();
+    const authClient =
+      getAuthClient();
 
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.getUser(accessToken);
+    } =
+      await authClient.auth.getUser(
+        accessToken
+      );
 
     if (userError || !user) {
       return NextResponse.json(
-        { error: 'Session invalide. Reconnecte-toi.' },
-        { status: 401 }
+        {
+          error:
+            'Session invalide. Reconnecte-toi.',
+        },
+        {
+          status: 401,
+        }
       );
     }
 
-    const { plan } = await request.json();
+    /*
+     * ----------------------------
+     * Vérification de la formule
+     * ----------------------------
+     */
 
-    const selectedPlan = PLANS[plan];
+    const { plan } =
+      await request.json();
+
+    const selectedPlan =
+      PLANS[plan];
 
     if (!selectedPlan) {
       return NextResponse.json(
-        { error: 'Formule inconnue.' },
-        { status: 400 }
+        {
+          error:
+            'Formule inconnue.',
+        },
+        {
+          status: 400,
+        }
       );
     }
 
-    const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-    const priceId = process.env[selectedPlan.priceEnv];
+    /*
+     * ----------------------------
+     * Vérification Supabase
+     * ----------------------------
+     */
+
+    const admin =
+      getSupabaseAdmin();
+
+    const {
+      data: profile,
+      error: profileError,
+    } = await admin
+      .from('profiles')
+      .select(
+        'payment_status, stripe_customer_id'
+      )
+      .eq(
+        'user_id',
+        user.id
+      )
+      .maybeSingle();
+
+    if (profileError) {
+      console.error(
+        'Profile verification error:',
+        profileError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            'Impossible de vérifier ton abonnement.',
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    /*
+     * ----------------------------
+     * VERROU ANTI DOUBLE PAIEMENT
+     * ----------------------------
+     */
+
+    const alreadyPaid =
+      profile?.payment_status ===
+        'monthly' ||
+      profile?.payment_status ===
+        'lifetime';
+
+    if (alreadyPaid) {
+      return NextResponse.json(
+        {
+          error:
+            'Ton compte possède déjà un accès actif à Levier.',
+          alreadyPaid: true,
+        },
+        {
+          status: 409,
+        }
+      );
+    }
+
+    /*
+     * ----------------------------
+     * Configuration Stripe
+     * ----------------------------
+     */
+
+    const stripeSecretKey =
+      process.env.STRIPE_SECRET_KEY;
+
+    const priceId =
+      process.env[
+        selectedPlan.priceEnv
+      ];
 
     const siteUrl = (
-      process.env.NEXT_PUBLIC_SITE_URL ||
+      process.env
+        .NEXT_PUBLIC_SITE_URL ||
       'https://www.levier.online'
     ).replace(/\/$/, '');
 
-    if (!stripeSecretKey || !priceId) {
-      console.error('Stripe configuration missing');
+    if (
+      !stripeSecretKey ||
+      !priceId
+    ) {
+      console.error(
+        'Stripe configuration missing'
+      );
 
       return NextResponse.json(
-        { error: 'Le paiement Stripe n’est pas encore configuré.' },
-        { status: 500 }
+        {
+          error:
+            'Le paiement Stripe n’est pas encore configuré.',
+        },
+        {
+          status: 500,
+        }
       );
     }
 
-    const body = new URLSearchParams();
+    /*
+     * ----------------------------
+     * Création Checkout
+     * ----------------------------
+     */
 
-    body.set('mode', selectedPlan.mode);
+    const body =
+      new URLSearchParams();
+
+    body.set(
+      'mode',
+      selectedPlan.mode
+    );
 
     body.set(
       'line_items[0][price]',
@@ -105,7 +239,7 @@ export async function POST(request) {
 
     body.set(
       'cancel_url',
-      `${siteUrl}/?payment=cancelled`
+      `${siteUrl}/#pricing`
     );
 
     body.set(
@@ -123,21 +257,47 @@ export async function POST(request) {
       plan
     );
 
-    if (user.email) {
+    /*
+     * Si ce compte possède déjà
+     * un client Stripe, on le réutilise.
+     */
+    if (
+      profile?.stripe_customer_id
+    ) {
+      body.set(
+        'customer',
+        profile.stripe_customer_id
+      );
+    } else if (user.email) {
       body.set(
         'customer_email',
         user.email
       );
     }
 
-    if (selectedPlan.mode === 'payment') {
+    /*
+     * Paiement unique :
+     * Stripe doit créer un client
+     * seulement s'il n'existe pas encore.
+     */
+    if (
+      selectedPlan.mode ===
+        'payment' &&
+      !profile?.stripe_customer_id
+    ) {
       body.set(
         'customer_creation',
         'always'
       );
     }
 
-    if (selectedPlan.mode === 'subscription') {
+    /*
+     * Métadonnées abonnement mensuel
+     */
+    if (
+      selectedPlan.mode ===
+      'subscription'
+    ) {
       body.set(
         'subscription_data[metadata][user_id]',
         user.id
@@ -149,27 +309,40 @@ export async function POST(request) {
       );
     }
 
-    const stripeResponse = await fetch(
-      'https://api.stripe.com/v1/checkout/sessions',
-      {
-        method: 'POST',
+    /*
+     * ----------------------------
+     * Appel Stripe
+     * ----------------------------
+     */
 
-        headers: {
-          Authorization: `Bearer ${stripeSecretKey}`,
-          'Content-Type':
-            'application/x-www-form-urlencoded',
-        },
+    const stripeResponse =
+      await fetch(
+        'https://api.stripe.com/v1/checkout/sessions',
+        {
+          method: 'POST',
 
-        body: body.toString(),
+          headers: {
+            Authorization:
+              `Bearer ${stripeSecretKey}`,
 
-        cache: 'no-store',
-      }
-    );
+            'Content-Type':
+              'application/x-www-form-urlencoded',
+          },
+
+          body:
+            body.toString(),
+
+          cache: 'no-store',
+        }
+      );
 
     const session =
       await stripeResponse.json();
 
-    if (!stripeResponse.ok || !session.url) {
+    if (
+      !stripeResponse.ok ||
+      !session.url
+    ) {
       console.error(
         'Stripe Checkout error:',
         session
@@ -178,12 +351,21 @@ export async function POST(request) {
       return NextResponse.json(
         {
           error:
-            session?.error?.message ||
+            session?.error
+              ?.message ||
             'Impossible de démarrer le paiement.',
         },
-        { status: 500 }
+        {
+          status: 500,
+        }
       );
     }
+
+    /*
+     * ----------------------------
+     * Redirection Stripe
+     * ----------------------------
+     */
 
     return NextResponse.json({
       url: session.url,
@@ -199,7 +381,9 @@ export async function POST(request) {
         error:
           'Impossible de démarrer le paiement.',
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }
