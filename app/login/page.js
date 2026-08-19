@@ -1,31 +1,52 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import {
+  useEffect,
+  useState,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 
 export default function LoginPage() {
   const router = useRouter();
 
-  const [mode, setMode] = useState('signin');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [confirmMsg, setConfirmMsg] = useState('');
-  const [hasPlan, setHasPlan] = useState(false);
+  const [mode, setMode] =
+    useState('signin');
+
+  const [email, setEmail] =
+    useState('');
+
+  const [password, setPassword] =
+    useState('');
+
+  const [error, setError] =
+    useState('');
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [
+    confirmMsg,
+    setConfirmMsg,
+  ] = useState('');
+
+  const [hasPlan, setHasPlan] =
+    useState(false);
 
   function getSelectedPlan() {
-    const urlPlan = new URLSearchParams(
-      window.location.search
-    ).get('plan');
+    const urlPlan =
+      new URLSearchParams(
+        window.location.search
+      ).get('plan');
 
-    const savedPlan = window.localStorage.getItem(
-      'levier_pending_plan'
-    );
+    const savedPlan =
+      window.localStorage.getItem(
+        'levier_pending_plan'
+      );
 
-    const plan = urlPlan || savedPlan;
+    const plan =
+      urlPlan || savedPlan;
 
     if (
       plan === 'monthly' ||
@@ -38,10 +59,12 @@ export default function LoginPage() {
   }
 
   useEffect(() => {
-    const plan = getSelectedPlan();
+    const plan =
+      getSelectedPlan();
 
     if (plan) {
       setHasPlan(true);
+
       window.localStorage.setItem(
         'levier_pending_plan',
         plan
@@ -51,75 +74,100 @@ export default function LoginPage() {
     }
   }, []);
 
-  async function goToCheckout(session) {
-    const plan = getSelectedPlan();
+  /*
+   * Le serveur décide maintenant
+   * si le compte est payé.
+   */
 
-    const {
-      data: profile,
-      error: profileError,
-    } = await supabase
-      .from('profiles')
-      .select('payment_status')
-      .eq('user_id', session.user.id)
-      .maybeSingle();
+  async function continueAfterLogin(
+    session
+  ) {
+    const plan =
+      getSelectedPlan();
 
-    if (profileError) {
-      throw profileError;
-    }
+    const response =
+      await fetch(
+        '/api/checkout',
+        {
+          method: 'POST',
 
-    const alreadyPaid =
-      profile?.payment_status === 'monthly' ||
-      profile?.payment_status === 'lifetime';
+          headers: {
+            'Content-Type':
+              'application/json',
 
-    if (alreadyPaid) {
+            Authorization:
+              `Bearer ${session.access_token}`,
+          },
+
+          body:
+            JSON.stringify({
+              plan,
+            }),
+        }
+      );
+
+    const result =
+      await response.json();
+
+    /*
+     * Déjà payé :
+     * dashboard directement.
+     */
+
+    if (result.alreadyPaid) {
       window.localStorage.removeItem(
         'levier_pending_plan'
       );
 
-      router.push('/dashboard');
+      window.location.href =
+        '/dashboard';
+
       return;
     }
 
-    if (!plan) {
+    /*
+     * Compte non payé et aucune
+     * formule choisie.
+     */
+
+    if (result.needsPlan) {
       window.localStorage.removeItem(
         'levier_pending_plan'
       );
 
-      router.push('/#pricing');
+      window.location.href =
+        '/#pricing';
+
       return;
     }
 
-    const response = await fetch(
-      '/api/checkout',
-      {
-        method: 'POST',
+    if (result.billingIssue) {
+      throw new Error(
+        result.error
+      );
+    }
 
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization:
-            `Bearer ${session.access_token}`,
-        },
-
-        body: JSON.stringify({
-          plan,
-        }),
-      }
-    );
-
-    const result = await response.json();
-
-    if (!response.ok || !result.url) {
+    if (
+      !response.ok ||
+      !result.url
+    ) {
       throw new Error(
         result.error ||
-          'Impossible de démarrer le paiement.'
+          'Impossible de continuer.'
       );
     }
+
+    /*
+     * Nouveau client :
+     * direction Stripe.
+     */
 
     window.localStorage.removeItem(
       'levier_pending_plan'
     );
 
-    window.location.href = result.url;
+    window.location.href =
+      result.url;
   }
 
   async function handleSubmit(e) {
@@ -129,7 +177,8 @@ export default function LoginPage() {
     setConfirmMsg('');
     setLoading(true);
 
-    const selectedPlan = getSelectedPlan();
+    const selectedPlan =
+      getSelectedPlan();
 
     if (
       mode === 'signup' &&
@@ -155,10 +204,11 @@ export default function LoginPage() {
       const {
         data,
         error,
-      } = await supabase.auth.signUp({
-        email,
-        password,
-      });
+      } =
+        await supabase.auth.signUp({
+          email,
+          password,
+        });
 
       if (error) {
         setLoading(false);
@@ -168,10 +218,12 @@ export default function LoginPage() {
 
       if (data.session) {
         try {
-          await goToCheckout(
+          await continueAfterLogin(
             data.session
           );
-        } catch (checkoutError) {
+        } catch (
+          checkoutError
+        ) {
           setLoading(false);
 
           setError(
@@ -182,7 +234,7 @@ export default function LoginPage() {
         setLoading(false);
 
         setConfirmMsg(
-          "Compte créé. Vérifie ta boîte mail pour confirmer ton adresse, puis connecte-toi pour continuer vers le paiement."
+          "Compte créé. Vérifie ta boîte mail pour confirmer ton adresse, puis connecte-toi pour continuer."
         );
 
         setMode('signin');
@@ -192,10 +244,11 @@ export default function LoginPage() {
         data,
         error,
       } =
-        await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
+        await supabase.auth
+          .signInWithPassword({
+            email,
+            password,
+          });
 
       if (error) {
         setLoading(false);
@@ -214,10 +267,12 @@ export default function LoginPage() {
       }
 
       try {
-        await goToCheckout(
+        await continueAfterLogin(
           data.session
         );
-      } catch (checkoutError) {
+      } catch (
+        checkoutError
+      ) {
         setLoading(false);
 
         setError(
@@ -260,16 +315,18 @@ export default function LoginPage() {
           <h1>
             Arrive préparé.
             <br />
+
             <span>
               Négocie avec un plan.
             </span>
           </h1>
 
           <p className="auth-story-copy">
-            Retrouve tes salaires, tes arguments,
-            tes opportunités et tes scripts au
-            même endroit — pour ne plus improviser
-            le jour J.
+            Retrouve tes salaires,
+            tes arguments, tes
+            opportunités et tes scripts
+            au même endroit — pour ne
+            plus improviser le jour J.
           </p>
 
           <div className="auth-points">
@@ -280,8 +337,8 @@ export default function LoginPage() {
                 <strong>
                   Connais ta valeur
                 </strong>{' '}
-                avec une fourchette adaptée à ton
-                profil.
+                avec une fourchette
+                adaptée à ton profil.
               </p>
             </div>
 
@@ -292,7 +349,8 @@ export default function LoginPage() {
                 <strong>
                   Prépare ton discours
                 </strong>{' '}
-                et anticipe les objections.
+                et anticipe les
+                objections.
               </p>
             </div>
 
@@ -303,7 +361,8 @@ export default function LoginPage() {
                 <strong>
                   Garde tes leviers
                 </strong>{' '}
-                et compare tes opportunités.
+                et compare tes
+                opportunités.
               </p>
             </div>
           </div>
@@ -331,8 +390,8 @@ export default function LoginPage() {
           <p className="auth-card-sub">
             {mode === 'signin'
               ? hasPlan
-                ? 'Connecte-toi pour continuer vers ton paiement.'
-                : 'Réservé aux clients Levier.'
+                ? 'Connecte-toi pour continuer.'
+                : 'Connecte-toi à ton espace Levier.'
               : 'Crée ton compte pour continuer vers le paiement.'}
           </p>
 
@@ -351,7 +410,9 @@ export default function LoginPage() {
                 required
                 value={email}
                 onChange={(e) =>
-                  setEmail(e.target.value)
+                  setEmail(
+                    e.target.value
+                  )
                 }
                 placeholder="toi@email.fr"
                 autoComplete="email"
@@ -403,12 +464,15 @@ export default function LoginPage() {
               <span>
                 {loading
                   ? 'Un instant…'
-                  : mode === 'signin'
+                  : mode ===
+                    'signin'
                   ? 'Se connecter'
                   : 'Créer mon compte'}
               </span>
 
-              {!loading && <i>→</i>}
+              {!loading && (
+                <i>→</i>
+              )}
             </button>
           </form>
 
@@ -417,15 +481,22 @@ export default function LoginPage() {
               mode === 'signin' ? (
                 <>
                   <span>
-                    Pas encore de compte ?
+                    Pas encore de
+                    compte ?
                   </span>
 
                   <button
                     type="button"
                     onClick={() => {
-                      setMode('signup');
+                      setMode(
+                        'signup'
+                      );
+
                       setError('');
-                      setConfirmMsg('');
+
+                      setConfirmMsg(
+                        ''
+                      );
                     }}
                   >
                     Créer un compte
@@ -440,9 +511,15 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      setMode('signin');
+                      setMode(
+                        'signin'
+                      );
+
                       setError('');
-                      setConfirmMsg('');
+
+                      setConfirmMsg(
+                        ''
+                      );
                     }}
                   >
                     Se connecter
@@ -472,7 +549,8 @@ export default function LoginPage() {
       </section>
 
       <footer className="auth-footer">
-        Levier — le bon argument, au bon moment.
+        Levier — le bon argument,
+        au bon moment.
       </footer>
     </main>
   );
