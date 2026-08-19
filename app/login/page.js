@@ -14,7 +14,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [confirmMsg, setConfirmMsg] = useState('');
 
-      function getSelectedPlan() {
+  function getSelectedPlan() {
     const urlPlan = new URLSearchParams(window.location.search).get('plan');
     const savedPlan = window.localStorage.getItem('levier_pending_plan');
 
@@ -44,86 +44,6 @@ export default function LoginPage() {
       body: JSON.stringify({ plan }),
     });
 
-    const result = await response.json();
-
-    if (!response.ok || !result.url) {
-      throw new Error(
-        result.error || 'Impossible de démarrer le paiement.'
-      );
-    }
-
-    window.localStorage.removeItem('levier_pending_plan');
-    window.location.href = result.url;
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setError('');
-    setConfirmMsg('');
-    setLoading(true);
-
-    const selectedPlan = getSelectedPlan();
-
-    if (selectedPlan) {
-      window.localStorage.setItem(
-        'levier_pending_plan',
-        selectedPlan
-      );
-    }
-
-    if (mode === 'signup') {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-
-      if (error) {
-        setLoading(false);
-        setError(error.message);
-        return;
-      }
-
-      if (data.session) {
-        try {
-          await goToCheckout(data.session);
-        } catch (checkoutError) {
-          setLoading(false);
-          setError(checkoutError.message);
-        }
-      } else {
-        setLoading(false);
-        setConfirmMsg(
-          "Compte créé. Vérifie ta boîte mail pour confirmer ton adresse, puis connecte-toi pour continuer vers le paiement."
-        );
-        setMode('signin');
-      }
-    } else {
-      const { data, error } =
-        await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-
-      if (error) {
-        setLoading(false);
-        setError(error.message);
-        return;
-      }
-
-      if (!data.session) {
-        setLoading(false);
-        setError('Impossible de récupérer ta session.');
-        return;
-      }
-
-      try {
-        await goToCheckout(data.session);
-      } catch (checkoutError) {
-        setLoading(false);
-        setError(checkoutError.message);
-      }
-    }
-  }
     const result = await response.json();
 
     if (!response.ok || !result.url) {
@@ -235,10 +155,12 @@ export default function LoginPage() {
               <span>01</span>
               <p><strong>Connais ta valeur</strong> avec une fourchette adaptée à ton profil.</p>
             </div>
+
             <div>
               <span>02</span>
               <p><strong>Prépare ton discours</strong> et anticipe les objections.</p>
             </div>
+
             <div>
               <span>03</span>
               <p><strong>Garde tes leviers</strong> et compare tes opportunités.</p>
@@ -252,7 +174,12 @@ export default function LoginPage() {
             <span className="auth-status"><i /> sécurisé</span>
           </div>
 
-          <h2>{mode === 'signin' ? 'Connecte-toi à Levier.' : 'Crée ton espace Levier.'}</h2>
+          <h2>
+            {mode === 'signin'
+              ? 'Connecte-toi à Levier.'
+              : 'Crée ton espace Levier.'}
+          </h2>
+
           <p className="auth-card-sub">
             {mode === 'signin'
               ? 'Tes outils de préparation t’attendent.'
@@ -283,15 +210,30 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Au moins 6 caractères"
-                autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+                autoComplete={
+                  mode === 'signin'
+                    ? 'current-password'
+                    : 'new-password'
+                }
               />
             </div>
 
             {error && <p className="auth-error">{error}</p>}
             {confirmMsg && <p className="auth-success">{confirmMsg}</p>}
 
-            <button type="submit" className="auth-submit" disabled={loading}>
-              <span>{loading ? 'Un instant…' : mode === 'signin' ? 'Se connecter' : 'Créer mon compte'}</span>
+            <button
+              type="submit"
+              className="auth-submit"
+              disabled={loading}
+            >
+              <span>
+                {loading
+                  ? 'Un instant…'
+                  : mode === 'signin'
+                  ? 'Se connecter'
+                  : 'Créer mon compte'}
+              </span>
+
               {!loading && <i>→</i>}
             </button>
           </form>
@@ -300,14 +242,28 @@ export default function LoginPage() {
             {mode === 'signin' ? (
               <>
                 <span>Pas encore de compte ?</span>
-                <button type="button" onClick={() => { setMode('signup'); setError(''); setConfirmMsg(''); }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('signup');
+                    setError('');
+                    setConfirmMsg('');
+                  }}
+                >
                   Créer un compte
                 </button>
               </>
             ) : (
               <>
                 <span>Déjà un compte ?</span>
-                <button type="button" onClick={() => { setMode('signin'); setError(''); setConfirmMsg(''); }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('signin');
+                    setError('');
+                    setConfirmMsg('');
+                  }}
+                >
                   Se connecter
                 </button>
               </>
@@ -316,7 +272,9 @@ export default function LoginPage() {
         </div>
       </section>
 
-      <footer className="auth-footer">Levier — le bon argument, au bon moment.</footer>
+      <footer className="auth-footer">
+        Levier — le bon argument, au bon moment.
+      </footer>
     </main>
   );
 }
