@@ -14,7 +14,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [confirmMsg, setConfirmMsg] = useState('');
 
-    function getSelectedPlan() {
+      function getSelectedPlan() {
     const urlPlan = new URLSearchParams(window.location.search).get('plan');
     const savedPlan = window.localStorage.getItem('levier_pending_plan');
 
@@ -44,6 +44,86 @@ export default function LoginPage() {
       body: JSON.stringify({ plan }),
     });
 
+    const result = await response.json();
+
+    if (!response.ok || !result.url) {
+      throw new Error(
+        result.error || 'Impossible de démarrer le paiement.'
+      );
+    }
+
+    window.localStorage.removeItem('levier_pending_plan');
+    window.location.href = result.url;
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError('');
+    setConfirmMsg('');
+    setLoading(true);
+
+    const selectedPlan = getSelectedPlan();
+
+    if (selectedPlan) {
+      window.localStorage.setItem(
+        'levier_pending_plan',
+        selectedPlan
+      );
+    }
+
+    if (mode === 'signup') {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+
+      if (error) {
+        setLoading(false);
+        setError(error.message);
+        return;
+      }
+
+      if (data.session) {
+        try {
+          await goToCheckout(data.session);
+        } catch (checkoutError) {
+          setLoading(false);
+          setError(checkoutError.message);
+        }
+      } else {
+        setLoading(false);
+        setConfirmMsg(
+          "Compte créé. Vérifie ta boîte mail pour confirmer ton adresse, puis connecte-toi pour continuer vers le paiement."
+        );
+        setMode('signin');
+      }
+    } else {
+      const { data, error } =
+        await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+      if (error) {
+        setLoading(false);
+        setError(error.message);
+        return;
+      }
+
+      if (!data.session) {
+        setLoading(false);
+        setError('Impossible de récupérer ta session.');
+        return;
+      }
+
+      try {
+        await goToCheckout(data.session);
+      } catch (checkoutError) {
+        setLoading(false);
+        setError(checkoutError.message);
+      }
+    }
+  }
     const result = await response.json();
 
     if (!response.ok || !result.url) {
