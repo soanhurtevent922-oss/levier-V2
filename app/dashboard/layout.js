@@ -70,12 +70,13 @@ export default function DashboardLayout({ children }) {
   async function handleSaveProfile(e) {
     e.preventDefault();
     const job_category = e.target.jobCategory.value;
+    const target_job_category = e.target.targetJobCategory.value || null;
     const experience_level = e.target.experienceLevel.value;
     const city_tier = e.target.cityTier.value;
     const next_review_date = e.target.nextReviewDate.value || null;
 
     const { data } = await supabase.from('profiles')
-      .update({ job_category, experience_level, city_tier, next_review_date }).eq('id', profile.id).select().single();
+      .update({ job_category, target_job_category, experience_level, city_tier, next_review_date }).eq('id', profile.id).select().single();
     setProfile(data);
     if (history.length === 0 && expenses.length === 0) {
       await loadHistoryAndExpenses(userId);
@@ -97,6 +98,13 @@ export default function DashboardLayout({ children }) {
             <div>
               <label htmlFor="jobCategory">Métier</label>
               <select id="jobCategory" name="jobCategory" defaultValue={profile?.job_category || JOB_CATEGORIES[0]}>
+                {JOB_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="targetJobCategory">Métier visé pour ton prochain poste (optionnel)</label>
+              <select id="targetJobCategory" name="targetJobCategory" defaultValue={profile?.target_job_category || ''}>
+                <option value="">Même que mon métier actuel</option>
                 {JOB_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </div>

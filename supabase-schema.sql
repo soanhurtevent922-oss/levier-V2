@@ -4,6 +4,7 @@ create table if not exists profiles (
   id uuid default gen_random_uuid() primary key,
   user_id uuid references auth.users not null unique,
   job_category text,
+  target_job_category text,
   experience_level text,
   city_tier text,
   next_review_date date,
@@ -51,3 +52,4 @@ alter table profiles add column if not exists next_review_date date;
 alter table profiles add column if not exists last_reminded_at date;
 alter table profiles add column if not exists payment_status text not null default 'none';
 alter table profiles add column if not exists stripe_customer_id text;
+alter table profiles add column if not exists target_job_category text;

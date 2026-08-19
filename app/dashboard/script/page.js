@@ -11,6 +11,8 @@ export default function ScriptPage() {
 
   const currentSalary = history?.[0]?.amount || null;
   const [min, max] = getBenchmark(profile.job_category, profile.experience_level, profile.city_tier) || [null, null];
+  const targetJob = profile.target_job_category || profile.job_category;
+  const [targetMin, targetMax] = getBenchmark(targetJob, profile.experience_level, profile.city_tier) || [null, null];
 
   function generateScript(e) {
     e.preventDefault();
@@ -41,14 +43,14 @@ export default function ScriptPage() {
       ].filter(Boolean);
       setScript(lines.join('\n\n'));
     } else {
-      // Mode entretien d'embauche — pas d'employeur actuel dans l'équation, on parle du poste visé.
+      // Mode entretien d'embauche — basé sur le métier visé si renseigné, sinon le métier actuel.
       const lines = [
-        `Merci de me recevoir pour ce poste de ${profile.job_category}, ça correspond vraiment à ce que je cherche à faire évoluer dans ma carrière.`,
+        `Merci de me recevoir pour ce poste de ${targetJob}, ça correspond vraiment à ce que je cherche à faire évoluer dans ma carrière.`,
         achievement
           ? `Pour vous donner un exemple concret de ce que j'apporte : ${achievement}.`
           : `Je serais ravi(e) de détailler mon parcours et ce que je peux apporter à ce poste précis.`,
-        min && max
-          ? `Concernant la rémunération, mes recherches sur le marché pour ce type de poste indiquent une fourchette entre ${min.toLocaleString('fr-FR')}€ et ${max.toLocaleString('fr-FR')}€ brut annuel.`
+        targetMin && targetMax
+          ? `Concernant la rémunération, mes recherches sur le marché pour ce type de poste indiquent une fourchette entre ${targetMin.toLocaleString('fr-FR')}€ et ${targetMax.toLocaleString('fr-FR')}€ brut annuel.`
           : `Concernant la rémunération, je me suis renseigné(e) sur les standards du marché pour ce type de poste.`,
         `Je viserais plutôt le haut de cette fourchette, vu mon expérience et ce que je peux apporter rapidement à l'équipe — mais je reste ouvert(e) à en discuter selon l'ensemble du package (avantages, évolution, télétravail).`,
         `Avez-vous des questions sur mon parcours, ou souhaitez-vous qu'on aborde un point en particulier ?`,
@@ -72,6 +74,11 @@ export default function ScriptPage() {
         {currentSalary && (
           <p className="benchmark-note" style={{ marginTop: '10px' }}>
             Ton dernier salaire renseigné (onglet Finances) : <strong>{currentSalary.toLocaleString('fr-FR')}€</strong>.
+          </p>
+        )}
+        {profile.target_job_category && profile.target_job_category !== profile.job_category && targetMin && targetMax && (
+          <p className="benchmark-note" style={{ marginTop: '10px' }}>
+            Pour le poste visé (<strong>{profile.target_job_category}</strong>) : {targetMin.toLocaleString('fr-FR')}€ – {targetMax.toLocaleString('fr-FR')}€.
           </p>
         )}
       </div>
