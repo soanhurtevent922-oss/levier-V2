@@ -177,7 +177,7 @@ export default function LandingPage() {
               <div className="l-price-amount">300€</div>
               <p>Paiement unique. Tu gardes l’accès à Levier sans limite de temps.</p>
             </div>
-            <Link href="/login" className="l-price-cta">Choisir l’accès à vie <span>→</span></Link>
+            <Link href="/login?plan=lifetime" className="l-price-cta">Choisir l’accès à vie <span>→</span></Link>
           </div>
 
           <div className="l-price-card l-price-card--featured">
@@ -187,7 +187,7 @@ export default function LandingPage() {
               <div className="l-price-amount">50€<small>/mois</small></div>
               <p>Sans engagement. Tu peux arrêter dès que tu n’en as plus besoin.</p>
             </div>
-            <Link href="/login" className="l-price-cta l-price-cta--featured">Commencer maintenant <span>→</span></Link>
+            <Link href="/login?plan=monthly" className="l-price-cta l-price-cta--featured">Commencer maintenant <span>→</span></Link>
           </div>
         </div>
       </section>
