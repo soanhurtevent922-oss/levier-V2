@@ -14,33 +14,113 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [confirmMsg, setConfirmMsg] = useState('');
 
+    function getSelectedPlan() {
+    const urlPlan = new URLSearchParams(window.location.search).get('plan');
+    const savedPlan = window.localStorage.getItem('levier_pending_plan');
+
+    const plan = urlPlan || savedPlan;
+
+    if (plan === 'monthly' || plan === 'lifetime') {
+      return plan;
+    }
+
+    return null;
+  }
+
+  async function goToCheckout(session) {
+    const plan = getSelectedPlan();
+
+    if (!plan) {
+      router.push('/dashboard');
+      return;
+    }
+
+    const response = await fetch('/api/checkout', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ plan }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.url) {
+      throw new Error(
+        result.error || 'Impossible de démarrer le paiement.'
+      );
+    }
+
+    window.localStorage.removeItem('levier_pending_plan');
+    window.location.href = result.url;
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
     setConfirmMsg('');
     setLoading(true);
 
+    const selectedPlan = getSelectedPlan();
+
+    if (selectedPlan) {
+      window.localStorage.setItem(
+        'levier_pending_plan',
+        selectedPlan
+      );
+    }
+
     if (mode === 'signup') {
-      const { data, error } = await supabase.auth.signUp({ email, password });
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+
       if (error) {
         setLoading(false);
         setError(error.message);
         return;
       }
+
       if (data.session) {
-        router.push('/dashboard');
+        try {
+          await goToCheckout(data.session);
+        } catch (checkoutError) {
+          setLoading(false);
+          setError(checkoutError.message);
+        }
       } else {
         setLoading(false);
-        setConfirmMsg("Compte créé. Vérifie ta boîte mail pour confirmer ton adresse, puis connecte-toi.");
+        setConfirmMsg(
+          "Compte créé. Vérifie ta boîte mail pour confirmer ton adresse, puis connecte-toi pour continuer vers le paiement."
+        );
         setMode('signin');
       }
     } else {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      setLoading(false);
+      const { data, error } =
+        await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
       if (error) {
+        setLoading(false);
         setError(error.message);
-      } else {
-        router.push('/dashboard');
+        return;
+      }
+
+      if (!data.session) {
+        setLoading(false);
+        setError('Impossible de récupérer ta session.');
+        return;
+      }
+
+      try {
+        await goToCheckout(data.session);
+      } catch (checkoutError) {
+        setLoading(false);
+        setError(checkoutError.message);
       }
     }
   }
