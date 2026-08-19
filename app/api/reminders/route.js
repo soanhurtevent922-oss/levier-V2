@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '../../../lib/supabaseAdmin';
+import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 
 // Appelée une fois par jour par Vercel Cron (voir vercel.json).
 // Sécurisée par un secret pour empêcher n'importe qui de la déclencher à la main.
@@ -8,6 +8,8 @@ export async function GET(req) {
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
   }
+
+  const supabaseAdmin = getSupabaseAdmin();
 
   try {
     const today = new Date();
