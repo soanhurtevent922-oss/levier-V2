@@ -715,6 +715,18 @@ export default function DashboardLayout({
               </button>
             </div>
 
+                        {profile.payment_status ===
+              'monthly' && (
+              <button
+                className="btn-ghost"
+                onClick={
+                  handleBillingPortal
+                }
+              >
+                Gérer mon abonnement
+              </button>
+            )}
+
             <button
               className="btn-ghost"
               onClick={
