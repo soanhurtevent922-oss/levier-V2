@@ -349,10 +349,54 @@ export default function DashboardLayout({
     setOpportunities(opps || []);
   }
 
-  async function handleSignOut() {
+    async function handleSignOut() {
     await supabase.auth.signOut();
 
     router.push('/login');
+  }
+
+  async function handleBillingPortal() {
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } =
+        await supabase.auth.getSession();
+
+      if (sessionError || !session) {
+        throw new Error(
+          'Session invalide. Reconnecte-toi.'
+        );
+      }
+
+      const response = await fetch(
+        '/api/billing-portal',
+        {
+          method: 'POST',
+          headers: {
+            Authorization:
+              `Bearer ${session.access_token}`,
+          },
+        }
+      );
+
+      const data =
+        await response.json();
+
+      if (!response.ok || !data.url) {
+        throw new Error(
+          data?.error ||
+            'Impossible d’ouvrir la gestion de ton abonnement.'
+        );
+      }
+
+      window.location.href = data.url;
+    } catch (error) {
+      setFatalError(
+        error?.message ||
+          'Impossible d’ouvrir la gestion de ton abonnement.'
+      );
+    }
   }
 
   async function handleSaveProfile(e) {
